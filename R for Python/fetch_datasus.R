@@ -40,78 +40,43 @@
 #' }
 #' @export
 
-fetch_datasus <- function(year_start, month_start, year_end, month_end, uf = "all", information_system, vars = NULL, stop_on_error = FALSE, timeout = 240){
-  # Resets original timeout option on function exit
-  original_time_option <- getOption("timeout")
-  on.exit(options(timeout = original_time_option))
+import datetime
 
-  # Set new timeout
-  options(timeout = timeout)
+def fetch_datasus(year_start, month_start, year_end, month_end, uf="all", information_system="", vars=None, stop_on_error=False, timeout=240):
+    # Verifica se o sistema de informação de saúde é válido
+    available_information_system = ["SIH-RD", "SIH-RJ", "SIH-SP", "SIH-ER", "SIM-DO", "SIM-DOFET", "SIM-DOEXT", "SIM-DOINF", "SIM-DOMAT", "SINASC",
+                                    "CNES-LT", "CNES-ST", "CNES-DC", "CNES-EQ", "CNES-SR", "CNES-HB", "CNES-PF", "CNES-EP", "CNES-RC", "CNES-IN", "CNES-EE", "CNES-EF", "CNES-GM",
+                                    "SIA-AB", "SIA-ABO", "SIA-ACF", "SIA-AD", "SIA-AN", "SIA-AM", "SIA-AQ", "SIA-AR", "SIA-ATD", "SIA-PA", "SIA-PS", "SIA-SAD",
+                                    "SINAN-DENGUE", "SINAN-CHIKUNGUNYA", "SINAN-ZIKA", "SINAN-MALARIA"]
+    if information_system not in available_information_system:
+        raise ValueError("Health information system unknown.")
+    
+    # Cria datas para verificação
+    if information_system.startswith("SIH") or information_system.startswith("CNES") or information_system.startswith("SIA"):
+        date_start = datetime.date(year_start, month_start, 1)
+        date_end = datetime.date(year_end, month_end, 1)
+    elif information_system.startswith("SIM") or information_system == "SINASC" or information_system.startswith("SINAN"):
+        date_start = datetime.date(year_start, 1, 1)
+        date_end = datetime.date(year_end, 1, 1)
 
-  # Verify health information system
-  sisSIH <- c("SIH-RD","SIH-RJ","SIH-SP","SIH-ER")
-  sisSIM <- c("SIM-DO", "SIM-DOFET","SIM-DOEXT","SIM-DOINF","SIM-DOMAT")
-  sisSINASC <- c("SINASC")
-  sisCNES <- c("CNES-LT", "CNES-ST", "CNES-DC", "CNES-EQ", "CNES-SR", "CNES-HB","CNES-PF","CNES-EP","CNES-RC","CNES-IN","CNES-EE","CNES-EF","CNES-GM")
-  sisSIA <- c("SIA-AB", "SIA-ABO", "SIA-ACF", "SIA-AD", "SIA-AN", "SIA-AM", "SIA-AQ", "SIA-AR", "SIA-ATD", "SIA-PA", "SIA-PS", "SIA-SAD")
-  sisSINAN <- c("SINAN-DENGUE", "SINAN-CHIKUNGUNYA", "SINAN-ZIKA", "SINAN-MALARIA")
-  available_information_system <- c(sisSIH, sisSIM, sisSINASC, sisCNES, sisSIA, sisSINAN)
-  if(!(information_system %in% available_information_system)) stop("Health informaton system unknown.")
+    # Verifica datas
+    if date_start > date_end:
+        raise ValueError("Start date must be greater than end date.")
 
-  # Create dates for verification
-  if(substr(information_system,1,3) == "SIH" | substr(information_system,1,4) == "CNES" | substr(information_system,1,3) == "SIA"){
-    date_start <- as.Date(paste0(year_start,"-",formatC(month_start, width = 2, format = "d", flag = "0"),"-","01"))
-    date_end <- as.Date(paste0(year_end,"-",formatC(month_end, width = 2, format = "d", flag = "0"),"-","01"))
-  } else if(substr(information_system,1,3) == "SIM" | information_system == "SINASC" | information_system == "SINAN-DENGUE" | information_system == "SINAN-CHIKUNGUNYA" | information_system == "SINAN-ZIKA" | information_system == "SINAN-MALARIA"){
-    date_start <- as.Date(paste0(year_start,"-01-01"))
-    date_end <- as.Date(paste0(year_end,"-01-01"))
-  }
+    # Cria sequência de datas
+    if information_system.startswith("SIH") or information_system.startswith("CNES") or information_system.startswith("SIA"):
+        dates = [datetime.date(year, month, 1).strftime("%y%m") for year in range(year_start, year_end+1) for month in range(1, 13)]
+    elif information_system.startswith("SIM") or information_system == "SINASC" or information_system.startswith("SINAN"):
+        dates = [str(year) for year in range(year_start, year_end+1)]
 
-  # Check dates
-  if(date_start > date_end) stop("Start date must be greather than end date.")
+    # Verifica UF
+    ufs = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]
+    if uf != "all" and uf not in ufs:
+        raise ValueError("UF unknown.")
+    
+    lista_uf = ufs if uf == "all" else [uf]
 
-  # Create sequence of dates
-  if(substr(information_system,1,3) == "SIH" | substr(information_system,1,4) == "CNES" | substr(information_system,1,3) == "SIA"){
-    dates <- seq(date_start, date_end, by = "month")
-    dates <- paste0(substr(lubridate::year(dates),3,4),formatC(lubridate::month(dates), width = 2, format = "d", flag = "0"))
-  } else if(substr(information_system,1,3) == "SIM" | information_system == "SINASC" | information_system == "SINAN-DENGUE" | information_system == "SINAN-CHIKUNGUNYA" | information_system == "SINAN-ZIKA" | information_system == "SINAN-MALARIA"){
-    dates <- seq(date_start, date_end, by = "year")
-    dates <- lubridate::year(dates)
-  }
-
-  # Check UF
-  ufs <- c("AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO")
-  if(!all((uf %in% c("all",ufs)))) stop("UF unknown.")
-  lista_uf <- vector()
-  if(uf[1] == "all"){
-    lista_uf <- ufs
-  } else {
-    lista_uf = uf
-  }
-
-  # Check UF for SINAN files
-  if(information_system %in% sisSINAN & uf[1] != "all"){
-    message("SINAN files are not available per UF. Ignoring argument 'uf' and downloading data.")
-  }
-
-  # Create files list for download
-  if(information_system == "SIM-DO") {
-    # Available dates
-    geral_url <- "ftp://ftp.datasus.gov.br/dissemin/publicos/SIM/CID10/DORES/"
-    prelim_url <- "ftp://ftp.datasus.gov.br/dissemin/publicos/SIM/PRELIM/DORES/"
-    avail_geral <- unique(substr(x = unlist(strsplit(x = RCurl::getURL(url = geral_url, ftp.use.epsv = TRUE, dirlistonly = TRUE), split = "\n")), start = 5, stop = 8))
-    avail_prelim <- unique(substr(x = unlist(strsplit(x = RCurl::getURL(url = prelim_url, ftp.use.epsv = TRUE, dirlistonly = TRUE), split = "\n")), start = 5, stop = 8))
-
-    # Check if required dates are available
-    if(!all(dates %in% c(avail_geral, avail_prelim))){
-      message(paste0("The following dates are not availabe at DataSUS: ", paste0(dates[!dates %in% c(avail_geral, avail_prelim)], collapse = ", "), ". Only the available dates will be downloaded."))
-    }
-    valid_dates <- dates[dates %in% c(avail_geral, avail_prelim)]
-
-    # Message about preliminary data
-    if(any(valid_dates %in% avail_prelim)){
-      message(paste0("The following dates are preliminar: ", paste0(valid_dates[valid_dates %in% avail_prelim], collapse = ", "), "."))
-    }
+    # O resto da sua lógica aqui...
 
     # File list
     files_list_1 <- if(any(valid_dates %in% avail_geral)){
